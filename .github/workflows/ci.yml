@@ -205,4 +205,9 @@ jobs:
 
       - name: Run shellcheck on all .sh files
         run: |
-          find . -type f -name "*.sh" | xargs shellcheck -e SC1090,SC1091
+          sh_files=$(find . -type f -name "*.sh")
+          if [ -n "$sh_files" ]; then
+            echo "$sh_files" | xargs shellcheck -e SC1090,SC1091
+          else
+            echo "No shell scripts found."
+          fi
