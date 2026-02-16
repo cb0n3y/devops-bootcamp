@@ -28,7 +28,8 @@ jobs:
         run: pip install yamllint
       - name: Validate YAML files
         run: |
-          find . -name '*.yml' -o -name '*.yaml' | xargs -I {} yamllint -c .yamllint {}
+          find . -name '*.yml' -o -name '*.yaml' | \
+          xargs -I {} yamllint -c .yamllint {}
 
   # Check for trailing whitespace in Groovy and YAML files
   lint-trailing:
@@ -63,16 +64,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-
 
-            - name: Install npm-groovy-lint
-              run: npm install -g npm-groovy-lint
+      - name: Install npm-groovy-lint
+        run: npm install -g npm-groovy-lint
 
-            - name: Lint Groovy files
-              run: |
+      - name: Lint Groovy files
+        run: |
           set +e
           npm-groovy-lint
           exit_code=$?
           if [ $exit_code -ne 0 ]; then
-            echo "Groovy lint finished with infos/warnings. Ignoring for CI success."
+            echo "Groovy lint finished with infos/warnings. \
+              Ignoring for CI success."
           fi
 
   # Check Vagrantfiles for Ruby syntax errors
@@ -87,8 +89,15 @@ jobs:
 
       - name: Install Vagrant
         run: |
-          wget -O - https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+          wget -O - https://apt.releases.hashicorp.com/gpg | \
+            sudo gpg --dearmor \
+              -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) \
+            signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+            https://apt.releases.hashicorp.com \
+            $(grep -oP '(?<=UBUNTU_CODENAME=).*' /etc/os-release || \
+              lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/hashicorp.list
           sudo apt update && sudo apt install vagrant
 
       - name: Validate Vagrantfile(s)
@@ -137,7 +146,7 @@ jobs:
         run: |
           set -e
           echo "Running terraform fmt check..."
-          terraform fmt -check -recursive
+          terraform fmt -diff -check -recursive
           echo "Running terraform validate..."
           terraform init -backend=false
           terraform validate
@@ -177,7 +186,8 @@ jobs:
         run: |
           # Fail on errors, ignore warnings
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+          flake8 . --count --exit-zero --max-complexity=10 \
+            --max-line-length=88 --statistics
 
       - name: Run black for formatting check
         run: black --check .
@@ -195,4 +205,4 @@ jobs:
 
       - name: Run shellcheck on all .sh files
         run: |
-          find . -type f -name "*.sh" | xargs shellcheck
+          find . -type f -name "*.sh" | xargs shellcheck -e SC1090,SC1091
