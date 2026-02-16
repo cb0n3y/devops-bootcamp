@@ -10,10 +10,8 @@ on:
       - main
 
 jobs:
-  lint-and-validate:
-    name: Lint & Validate
+  checkout-repository:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,16 +19,23 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      - name: Run a basic shell script check
-        run: |
-          echo "Listing top-level folders:"
-          ls -la
-
+  # Lint YAML files with yamllint
+  lint-yaml:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install yamllint
+        run: pip install yamllint
       - name: Validate YAML files
         run: |
-          find . -name '*.yml' -o -name '*.yaml' | xargs -I {} yamllint {}
+          find . -name '*.yml' -o -name '*.yaml' | xargs -I {} yamllint -c .yamllint {}
 
-      - name: Check for trailing whitespace (basic linting)
+  # Check for trailing whitespace in Groovy and YAML files
+  lint-trailing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for trailing whitespace
         run: |
           if grep -rI '[[:space:]]$' ./; then
             echo "Trailing whitespace found!"
@@ -39,39 +44,38 @@ jobs:
             echo "No trailing whitespace."
           fi
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+  # Lint Groovy files with npm-groovy-lint, but do not fail CI on warnings
+  lint-groovy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Cache Python packages
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Cache Node modules
         uses: actions/cache@v3
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-node-
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install flake8 black
+            - name: Install npm-groovy-lint
+              run: npm install -g npm-groovy-lint
 
-      - name: Check Python syntax
-        run: |
-          python -m compileall .
+            - name: Lint Groovy files
+              run: |
+          set +e
+          npm-groovy-lint
+          exit_code=$?
+          if [ $exit_code -ne 0 ]; then
+            echo "Groovy lint finished with infos/warnings. Ignoring for CI success."
+          fi
 
-      - name: Run flake8 for PEP8 compliance
-        run: |
-          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          flake8 . --count --exit-zero --max-complexity=10 \
-            --max-line-length=88 --statistics
-
-      - name: Run black for formatting check
-        run: |
-          black --check .
-
+  # Check Vagrantfiles for Ruby syntax errors
   validate-vagrantfiles:
     runs-on: ubuntu-latest
     steps:
@@ -119,6 +123,7 @@ jobs:
 
           echo "All Vagrantfile(s) passed Ruby syntax check."
 
+  # Check Terraform
   validate-terraform:
     runs-on: ubuntu-latest
     steps:
@@ -126,40 +131,68 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.9.8  # or your preferred version
+          terraform_version: 1.9.8
 
       - name: Validate Terraform files
         run: |
           set -e
           echo "Running terraform fmt check..."
-          terraform fmt -diff -check -recursive
+          terraform fmt -check -recursive
           echo "Running terraform validate..."
           terraform init -backend=false
           terraform validate
 
-  lint-groovy:
+  # Check Python files with flake8, but do not fail CI on warnings
+  python-lint:
+    name: Check Python files with flake8
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '18'
+          python-version: '3.12'
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - name: Cache Python packages
+        uses: actions/cache@v3
         with:
-          node-version: '18'
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
-      - name: Install npm-groovy-lint
-        run: npm install -g npm-groovy-lint
-
-      - name: Lint Groovy files
+      - name: Install dependencies
         run: |
-          set +e
-          npm-groovy-lint
-          exit_code=$?
-          if [ $exit_code -ne 0 ]; then
-            echo "Groovy lint finished with infos/warnings. Ignoring for CI success."
-          fi
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install flake8 black
+
+      - name: Check Python syntax
+        run: python -m compileall .
+
+      - name: Run flake8 for PEP8 compliance
+        run: |
+          # Fail on errors, ignore warnings
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
+
+      - name: Run black for formatting check
+        run: black --check .
+
+  shellcheck:
+    name: Check shell scripts with shellcheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck on all .sh files
+        run: |
+          find . -type f -name "*.sh" | xargs shellcheck
